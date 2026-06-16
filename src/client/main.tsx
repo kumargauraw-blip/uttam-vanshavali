@@ -800,8 +800,10 @@ function PersonEditor({
   title: string;
   currentPersonId?: string | null;
 }) {
-  const eligibleParents = people.filter((person) => person.id !== currentPersonId);
-  const eligibleSpouses = people.filter((person) => person.id !== currentPersonId);
+  const eligibleParents = people.filter((person) => person.id !== currentPersonId && person.gender === "male");
+  const eligibleSpouses = form.gender === "male"
+    ? people.filter((person) => person.id !== currentPersonId && person.gender === "female" && !person.fatherId && !person.motherId)
+    : [];
   const fatherSpouses = form.fatherId
     ? spouses
         .filter((spouse) => spouse.personAId === form.fatherId || spouse.personBId === form.fatherId)
@@ -817,7 +819,10 @@ function PersonEditor({
       : hasOneMother
         ? "Automatically selected from the father's linked spouse."
         : "Choose from the father's linked spouses.";
-  const spouseLabel = form.gender === "male" ? "Wife / spouse" : form.gender === "female" ? "Husband / spouse" : "Spouse";
+  const spouseLabel = "Wife / spouse";
+  const marriedDaughterNotice = form.gender === "female" && form.maritalStatus === "married"
+    ? "Married daughters are shown as part of this family, but their husband and children should be maintained in the husband's family tree."
+    : "";
 
   React.useEffect(() => {
     if (!form.fatherId) {
@@ -834,10 +839,10 @@ function PersonEditor({
   }, [form.fatherId, form.motherId, fatherSpouses.map((person) => person.id).join("|"), setForm]);
 
   React.useEffect(() => {
-    if (form.maritalStatus !== "married" && form.spouseId) {
+    if ((form.maritalStatus !== "married" || form.gender !== "male") && form.spouseId) {
       setForm((current) => ({ ...current, spouseId: "" }));
     }
-  }, [form.maritalStatus, form.spouseId, setForm]);
+  }, [form.gender, form.maritalStatus, form.spouseId, setForm]);
 
   return (
     <section className="surface">
@@ -882,14 +887,21 @@ function PersonEditor({
           </select>
         </label>
         {form.maritalStatus === "married" && (
-          <label className="field">
-            <span>{spouseLabel}</span>
-            <select value={form.spouseId} onChange={(event) => setForm((current) => ({ ...current, spouseId: event.target.value }))}>
-              <option value="">Not linked yet</option>
-              {eligibleSpouses.map((person) => <option key={person.id} value={person.id}>{displayPersonName(person)}</option>)}
-            </select>
-            <small>Select an existing person to link this marriage. If the spouse is not in the lineage yet, save this person first, add the spouse, then edit either record to link them.</small>
-          </label>
+          form.gender === "male" ? (
+            <label className="field">
+              <span>{spouseLabel}</span>
+              <select value={form.spouseId} onChange={(event) => setForm((current) => ({ ...current, spouseId: event.target.value }))}>
+                <option value="">Not linked yet</option>
+                {eligibleSpouses.map((person) => <option key={person.id} value={person.id}>{displayPersonName(person)}</option>)}
+              </select>
+              <small>Select an existing female spouse who is not already recorded as a daughter in this tree.</small>
+            </label>
+          ) : (
+            <div className="field lineage-rule-note">
+              <span>Marriage continuation rule</span>
+              <small>{marriedDaughterNotice || "Set gender to Male if this person is a male lineage member whose next generation should continue here."}</small>
+            </div>
+          )
         )}
         <TextInput label="Date of birth" value={form.dateOfBirth} placeholder="YYYY-MM-DD" onChange={(dateOfBirth) => setForm((current) => ({ ...current, dateOfBirth }))} />
         <TextInput label="Date of death" value={form.dateOfDeath} placeholder="YYYY-MM-DD" onChange={(dateOfDeath) => setForm((current) => ({ ...current, dateOfDeath }))} />
@@ -902,6 +914,7 @@ function PersonEditor({
             <option value="">Unknown / not set</option>
             {eligibleParents.map((person) => <option key={person.id} value={person.id}>{displayPersonName(person)}</option>)}
           </select>
+          <small>Only male lineage members can be selected as father for next-generation continuation.</small>
         </label>
         <label className="field parent-constrained">
           <span>Mother</span>

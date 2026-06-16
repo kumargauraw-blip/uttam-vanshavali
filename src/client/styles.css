@@ -871,6 +871,14 @@ h2 {
   line-height: 1.35;
 }
 
+.lineage-rule-note {
+  align-content: center;
+  border: 1px solid #eadfcb;
+  border-radius: 8px;
+  background: #fff8e8;
+  padding: 10px 12px;
+}
+
 .field input,
 .field select,
 .field textarea,

@@ -542,6 +542,11 @@ function personExistsInTree(treeId: string, personId: string | null | undefined)
   return Boolean(row);
 }
 
+function personRowInTree(treeId: string, personId: string | null | undefined) {
+  if (!personId) return null;
+  return db.prepare("SELECT * FROM lineage_people WHERE id = ? AND tree_id = ?").get(personId, treeId) as PersonRow | undefined ?? null;
+}
+
 function spouseIdsFor(treeId: string, personId: string) {
   const rows = db
     .prepare("SELECT person_a_id, person_b_id FROM lineage_spouses WHERE tree_id = ? AND (person_a_id = ? OR person_b_id = ?)")
@@ -578,12 +583,22 @@ function resolveParentage(input: {
   }
 
   if (fatherId) {
+    const father = personRowInTree(input.treeId, fatherId);
+    if (father?.gender !== "male") {
+      throw validationError("Only male lineage members can continue the next generation in this family tree.");
+    }
     const fatherSpouses = spouseIdsFor(input.treeId, fatherId);
     if (!motherId && fatherSpouses.length === 1) {
       motherId = fatherSpouses[0];
     }
     if (motherId && !fatherSpouses.includes(motherId)) {
       throw validationError("Mother must be one of the selected father's linked spouses.");
+    }
+  }
+  if (motherId) {
+    const mother = personRowInTree(input.treeId, motherId);
+    if (mother?.gender !== "female") {
+      throw validationError("Mother must be a female spouse linked to the selected father.");
     }
   }
 
@@ -893,12 +908,16 @@ export const lineageStore = {
     if (!existing) throw new Error("Person not found.");
     const nextFatherId = "fatherId" in parsed ? parsed.fatherId ?? null : existing.father_id;
     const nextMotherId = "motherId" in parsed ? parsed.motherId ?? null : existing.mother_id;
+    const nextGender = "gender" in parsed ? parsed.gender ?? existing.gender : existing.gender;
     const parentage = resolveParentage({
       treeId: existing.tree_id,
       selfId: id,
       fatherId: nextFatherId,
       motherId: nextMotherId
     });
+    if (nextGender === "female" && (parentage.fatherId || parentage.motherId) && spouseIdsFor(existing.tree_id, id).length > 0) {
+      throw validationError("A daughter recorded in this family tree cannot link her husband or continue her next generation here.");
+    }
     const normalizedParsed = {
       ...parsed,
       fatherId: parentage.fatherId,
@@ -955,6 +974,18 @@ export const lineageStore = {
   },
 
   linkSpouses(treeId: string, personAId: string, personBId: string, status = "married") {
+    if (personAId === personBId) throw validationError("A person cannot be linked as their own spouse.");
+    const personA = personRowInTree(treeId, personAId);
+    const personB = personRowInTree(treeId, personBId);
+    if (!personA || !personB) throw validationError("Both spouses must belong to this family tree.");
+    const male = personA.gender === "male" ? personA : personB.gender === "male" ? personB : null;
+    const female = personA.gender === "female" ? personA : personB.gender === "female" ? personB : null;
+    if (!male || !female) {
+      throw validationError("Marriage links in this tree must be between a male lineage member and a female spouse.");
+    }
+    if (female.father_id || female.mother_id) {
+      throw validationError("A daughter recorded in this family tree cannot link her husband or continue her next generation here.");
+    }
     const [a, b] = [personAId, personBId].sort();
     const timestamp = now();
     db.prepare(
