@@ -158,6 +158,7 @@ type PersonForm = {
   gender: Gender;
   lifeStatus: LifeStatus;
   maritalStatus: MaritalStatus;
+  spouseId: string;
   dateOfBirth: string;
   dateOfDeath: string;
   deathAnniversary: string;
@@ -185,6 +186,7 @@ const emptyPersonForm: PersonForm = {
   gender: "unknown",
   lifeStatus: "living",
   maritalStatus: "unknown",
+  spouseId: "",
   dateOfBirth: "",
   dateOfDeath: "",
   deathAnniversary: "",
@@ -224,6 +226,7 @@ function personToForm(person: Person): PersonForm {
     gender: person.gender,
     lifeStatus: person.lifeStatus,
     maritalStatus: person.maritalStatus,
+    spouseId: "",
     dateOfBirth: person.dateOfBirth ?? "",
     dateOfDeath: person.dateOfDeath ?? "",
     deathAnniversary: person.deathAnniversary ?? "",
@@ -798,6 +801,7 @@ function PersonEditor({
   currentPersonId?: string | null;
 }) {
   const eligibleParents = people.filter((person) => person.id !== currentPersonId);
+  const eligibleSpouses = people.filter((person) => person.id !== currentPersonId);
   const fatherSpouses = form.fatherId
     ? spouses
         .filter((spouse) => spouse.personAId === form.fatherId || spouse.personBId === form.fatherId)
@@ -813,6 +817,7 @@ function PersonEditor({
       : hasOneMother
         ? "Automatically selected from the father's linked spouse."
         : "Choose from the father's linked spouses.";
+  const spouseLabel = form.gender === "male" ? "Wife / spouse" : form.gender === "female" ? "Husband / spouse" : "Spouse";
 
   React.useEffect(() => {
     if (!form.fatherId) {
@@ -827,6 +832,12 @@ function PersonEditor({
       setForm((current) => ({ ...current, motherId: "" }));
     }
   }, [form.fatherId, form.motherId, fatherSpouses.map((person) => person.id).join("|"), setForm]);
+
+  React.useEffect(() => {
+    if (form.maritalStatus !== "married" && form.spouseId) {
+      setForm((current) => ({ ...current, spouseId: "" }));
+    }
+  }, [form.maritalStatus, form.spouseId, setForm]);
 
   return (
     <section className="surface">
@@ -870,6 +881,16 @@ function PersonEditor({
             <option value="unknown">Unknown</option>
           </select>
         </label>
+        {form.maritalStatus === "married" && (
+          <label className="field">
+            <span>{spouseLabel}</span>
+            <select value={form.spouseId} onChange={(event) => setForm((current) => ({ ...current, spouseId: event.target.value }))}>
+              <option value="">Not linked yet</option>
+              {eligibleSpouses.map((person) => <option key={person.id} value={person.id}>{displayPersonName(person)}</option>)}
+            </select>
+            <small>Select an existing person to link this marriage. If the spouse is not in the lineage yet, save this person first, add the spouse, then edit either record to link them.</small>
+          </label>
+        )}
         <TextInput label="Date of birth" value={form.dateOfBirth} placeholder="YYYY-MM-DD" onChange={(dateOfBirth) => setForm((current) => ({ ...current, dateOfBirth }))} />
         <TextInput label="Date of death" value={form.dateOfDeath} placeholder="YYYY-MM-DD" onChange={(dateOfDeath) => setForm((current) => ({ ...current, dateOfDeath }))} />
         <TextInput label="Death anniversary / tithi" value={form.deathAnniversary} onChange={(deathAnniversary) => setForm((current) => ({ ...current, deathAnniversary }))} />
@@ -1506,12 +1527,29 @@ function AppShell({
     ? people.filter((person) => displayPersonName(person).toLowerCase().includes(search.toLowerCase()))
     : people;
 
+  function spouseIdFor(personId: string) {
+    const link = spouses.find((spouse) => spouse.personAId === personId || spouse.personBId === personId);
+    return link ? (link.personAId === personId ? link.personBId : link.personAId) : "";
+  }
+
+  function personFormWithSpouse(person: Person): PersonForm {
+    return { ...personToForm(person), spouseId: spouseIdFor(person.id) };
+  }
+
   async function savePerson() {
+    let savedPersonId = editingId;
     if (editingId) {
       await lineage.request("update-person", `/api/lineage/people/${editingId}`, { method: "PATCH", body: JSON.stringify(formToBody(form, tree.id)) });
     } else {
       const json = await lineage.request("create-person", "/api/lineage/people", { method: "POST", body: JSON.stringify(formToBody(form, tree.id)) });
+      savedPersonId = json.person.id;
       setSelectedId(json.person.id);
+    }
+    if (savedPersonId && form.maritalStatus === "married" && form.spouseId) {
+      await lineage.request("link-spouse", "/api/lineage/spouses", {
+        method: "POST",
+        body: JSON.stringify({ treeId: tree.id, personAId: savedPersonId, personBId: form.spouseId })
+      });
     }
     setForm(emptyPersonForm);
     setEditingId(null);
@@ -1534,7 +1572,7 @@ function AppShell({
 
   function editSelected() {
     if (!selected) return;
-    setForm(personToForm(selected));
+    setForm(personFormWithSpouse(selected));
     setEditingId(selected.id);
     setSelectedId(null);
     setIsPersonEditorOpen(true);
@@ -1542,7 +1580,7 @@ function AppShell({
   }
 
   function editPerson(person: Person) {
-    setForm(personToForm(person));
+    setForm(personFormWithSpouse(person));
     setEditingId(person.id);
     setSelectedId(null);
     setIsPersonEditorOpen(true);
