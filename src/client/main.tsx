@@ -13,6 +13,7 @@ import {
   LocateFixed,
   LogOut,
   Mail,
+  Menu,
   MessageCircle,
   Mic,
   Plus,
@@ -1515,11 +1516,13 @@ function AppShell({
   const [form, setForm] = React.useState<PersonForm>(emptyPersonForm);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [isPersonEditorOpen, setIsPersonEditorOpen] = React.useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
 
   function handleTreeCreated(treeId: string) {
     const next = { ...session, treeId };
     onSessionChange(next);
     setView("people");
+    setIsMobileMenuOpen(false);
   }
 
   if (!lineage.state) {
@@ -1620,11 +1623,26 @@ function AppShell({
     setForm(emptyPersonForm);
     setIsPersonEditorOpen(false);
     setView("overview");
+    setIsMobileMenuOpen(false);
+  }
+
+  function navigate(nextView: AppView) {
+    setView(nextView);
+    setIsMobileMenuOpen(false);
   }
 
   return (
     <main className="product-shell">
-      <aside className="app-sidebar">
+      <header className="mobile-appbar">
+        <button className="icon-only" onClick={() => setIsMobileMenuOpen(true)} aria-label="Open menu">
+          <Menu size={21} />
+        </button>
+        <button className="brand-mark" onClick={goHome} aria-label="Go to overview home">
+          <Landmark size={22} /><strong>Vanshavali</strong>
+        </button>
+      </header>
+      {isMobileMenuOpen && <button className="mobile-menu-backdrop" aria-label="Close menu" onClick={() => setIsMobileMenuOpen(false)} />}
+      <aside className={`app-sidebar ${isMobileMenuOpen ? "open" : ""}`}>
         <button className="brand-mark" onClick={goHome} aria-label="Go to overview home">
           <Landmark size={22} /><strong>Vanshavali</strong>
         </button>
@@ -1637,7 +1655,7 @@ function AppShell({
             ...(canEdit ? [["import", Upload, "Import"] as const] : []),
             ["account", KeyRound, "Account"]
           ].map(([key, Icon, label]) => (
-            <button key={key as string} className={view === key ? "active" : ""} onClick={() => setView(key as AppView)}>
+            <button key={key as string} className={view === key ? "active" : ""} onClick={() => navigate(key as AppView)}>
               {React.createElement(Icon as typeof Home, { size: 17 })}
               {label as string}
             </button>
